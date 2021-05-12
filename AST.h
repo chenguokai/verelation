@@ -46,4 +46,8 @@ struct ModuleList {
 void genTotalAST();
 void print_module(struct ModuleNode *module);
 
+struct StringNode {
+    char *name;
+    struct StringNode *next;
+};
 #endif //VERELATION_AST_H

@@ -120,7 +120,7 @@ void process_token_type() {
             list_head->type = MODULE;
         } else if (strncmp(list_head->name, "endmodule", 10) == 0) {
             list_head->type = ENDMODULE;
-        } else if (list_head->name[0] == '(' || list_head->name[0] == ')' || list_head->name[0] ==  '[' || list_head->name[0] == ']' || list_head->name[0] == '{' || list_head->name[0] == '}' || strncmp(list_head->name, "begin", 6) == 0 || strncmp(list_head->name, "end", 4) == 0) {
+        } else if (list_head->name[0] == '(' || list_head->name[0] == ')' || list_head->name[0] ==  '[' || list_head->name[0] == ']' || list_head->name[0] == '{' || list_head->name[0] == '}') {
             list_head->type = BRACKET;
         } else if (list_head->name[0] == ',') {
             list_head->type = COMMA;
@@ -144,6 +144,12 @@ void process_token_type() {
             list_head->type = POSEDGE;
         } else if (list_head->name[0] == '@') {
             list_head->type = AT;
+        } else if (strncmp(list_head->name, "begin", 6) == 0) {
+            list_head->type = BEGIN;
+        } else if (strncmp(list_head->name, "end", 4) == 0) {
+            list_head->type = END;
+        } else if (strncmp(list_head->name, "else", 5) == 0) {
+            list_head->type = ELSE;
         } else {
             list_head->type = NAME;
         }

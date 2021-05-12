@@ -99,6 +99,88 @@ static void associate(struct ModuleNode * module, char *name, struct SignalList 
     associate_list->next = list;
 }
 
+void deal_if(struct ModuleNode *module, struct StringNode *condition_table) {
+    int if_condition_count;
+    while (1) {
+        // exit when we met an end at the beginning
+        if (token_ptr->type == END) {
+            consume();
+            break;
+        } else if (token_ptr->type == ENDMODULE) {
+            break;
+        }
+        if (token_ptr->type == NAME) {
+            // unconditional
+            char *sig_name = token_ptr->name;
+            struct SignalList *old_signal = find_old_signal(module, sig_name);
+            consume();
+            while (1) {
+                if (token_ptr->type == SEMICOLON) {
+                    consume();
+                    break;
+                }
+                if (token_ptr->type == NAME) {
+                    // associate this signal
+                    associate(module, token_ptr->name, &(old_signal->node->associate_list));
+                }
+                consume();
+            }
+            // add signals from condition_table
+            struct StringNode *ptr = condition_table->next;
+            while (ptr != NULL) {
+                associate(module, ptr->name, &(old_signal->node->associate_list));
+                ptr = ptr->next;
+            }
+            continue;
+
+        } else if (token_ptr->type == IF) {
+            consume();
+            expect(BRACKET);
+            consume();
+            // count used to recover
+            if_condition_count = 0;
+            while (1) {
+                if (token_ptr->type == BEGIN) break;
+
+                if (token_ptr->type == NAME) {
+                    // allocate a new string node
+                    struct StringNode *string_node = (struct StringNode *) malloc(sizeof (struct StringNode));
+                    string_node->name = token_ptr->name;
+                    string_node->next = condition_table->next;
+                    condition_table->next = string_node;
+                    ++if_condition_count;
+                }
+                consume();
+            }
+            // if ... BEGIN
+            expect(BEGIN);
+            consume();
+            deal_if(module, condition_table);
+            if (token_ptr->type == ELSE) {
+                // we have an else to deal with
+                consume();
+                // if it begins with if, no begin needed
+                // if it begins with begin, consume it
+                if (token_ptr->type == BEGIN) {
+                    consume();
+                    deal_if(module, condition_table);
+                    expect(END);
+                    consume();
+                } else {
+                    deal_if(module, condition_table);
+                }
+            }
+            // recover from added string_node
+            struct StringNode *del;
+            for (int i = 0; i < if_condition_count; ++i) {
+                del = condition_table->next;
+                condition_table->next = del->next;
+                free(del);
+            }
+            continue;
+        }
+    }
+}
 
 
 static struct ModuleNode * genASTModule() {
@@ -223,25 +305,13 @@ static struct ModuleNode * genASTModule() {
             consume();
             expect(BRACKET);
             consume();
-            expect(BRACKET); // begin
-            consume();
-
-            // if-else clauses
-            // todo: if-else
-            expect(IF);
-            consume();
-            expect(BRACKET);
+            expect(BEGIN); // begin
             consume();
 
             // the head of condition table
-
-
-            // we should record the condition tables and associate them with all signals below
-            expect(NAME);
-
-
-
-            expect(BRACKET); // end
+            struct StringNode condition_table;
+            condition_table.next = NULL;
+            deal_if(module, &condition_table);
         } else if (token_ptr->type == NAME) {
             // defining a new module instance
             // we should associate all input signal of new module instance with our signal
