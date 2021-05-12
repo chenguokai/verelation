@@ -228,13 +228,25 @@ static struct ModuleNode * genASTModule() {
 
             // if-else clauses
             // todo: if-else
+            expect(IF);
+            consume();
+            expect(BRACKET);
+            consume();
+
+            // the head of condition table
+
+
+            // we should record the condition tables and associate them with all signals below
+            expect(NAME);
+
+
 
             expect(BRACKET); // end
         } else if (token_ptr->type == NAME) {
             // defining a new module instance
             // we should associate all input signal of new module instance with our signal
             // and associate all output signal of new module instance with our signal
-            
+
         } else {
             printf("Error: cannot understand token %s at line %d\n", token_ptr->name, token_ptr->linenum);
             exit(1);
@@ -250,6 +262,12 @@ void print_module(struct ModuleNode *module) {
     struct SignalList *list = module->sig_list.next;
     while (list != NULL) {
         printf("signal %s type %d\n", list->node->name, list->node->type);
+        struct SignalList *associate = list->node->associate_list.next;
+        while (associate != NULL) {
+            printf("  depends on %s\n", associate->node->name);
+            associate = associate->next;
+        }
         list = list->next;
     }
+
 }
