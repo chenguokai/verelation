@@ -4,6 +4,7 @@
 #include "common.h"
 #include "preprocess.h"
 #include "token.h"
+#include "AST.h"
 
 int feature_preprocess = 0;
 char source_path[PATH_LEN];
@@ -47,13 +48,17 @@ int main(int argc, char **argv) {
         exit(1);
     }
     preprocess(&source_buffer);
-    /*
+
     for (int i = 0; source_buffer[i] != 0; ++i) {
         putchar(source_buffer[i]);
     }
-    */
+
     tokenize();
+    process_token_type();
     print_token_info();
+
+    genTotalAST();
+
 
     return 0;
 }
