@@ -41,8 +41,9 @@ static int get_next_token() {
             case '^':
             case '~':
             case '!':
-            case ':':
             case '@':
+            case '[':
+            case ']':
                 if (token_len != 0) {
                     // already have a token parsed
                     token_put_back(); // put_back
@@ -119,7 +120,7 @@ void process_token_type() {
             list_head->type = MODULE;
         } else if (strncmp(list_head->name, "endmodule", 10) == 0) {
             list_head->type = ENDMODULE;
-        } else if (list_head->name[0] == '(' || list_head->name[0] == ')' || list_head->name[0] == '{' || list_head->name[0] == '}' || strncmp(list_head->name, "begin", 6) == 0 || strncmp(list_head->name, "end", 4) == 0) {
+        } else if (list_head->name[0] == '(' || list_head->name[0] == ')' || list_head->name[0] ==  '[' || list_head->name[0] == ']' || list_head->name[0] == '{' || list_head->name[0] == '}' || strncmp(list_head->name, "begin", 6) == 0 || strncmp(list_head->name, "end", 4) == 0) {
             list_head->type = BRACKET;
         } else if (list_head->name[0] == ',') {
             list_head->type = COMMA;
@@ -129,7 +130,7 @@ void process_token_type() {
             list_head->type = NUMBER;
         } else if (strncmp(list_head->name, "=", 2) == 0) {
             list_head->type = ASSOCIATE;
-        } else if (list_head->name[0] == '+' || list_head->name[0] == '-' || list_head->name[0] == '~' || list_head->name[0] == '!' || list_head->name[0] == '&' || list_head->name[0] == '|' || list_head->name[0] == '^' || list_head->name[0] == ':' || strncmp(list_head->name, "==", 3) == 0 || strncmp(list_head->name, ">=", 3) == 0 || strncmp(list_head->name, "<=", 3) == 0) {
+        } else if (list_head->name[0] == '+' || list_head->name[0] == '-' || list_head->name[0] == '~' || list_head->name[0] == '!' || list_head->name[0] == '&' || list_head->name[0] == '|' || list_head->name[0] == '^' || list_head->name[0] == ':' || strncmp(list_head->name, "==", 3) == 0 || strncmp(list_head->name, ">=", 3) == 0 || strncmp(list_head->name, "<=", 3) == 0 || list_head->name[0] == '?' || list_head->name[0] == ':') {
             list_head->type = OPERATOR;
         } else if (strncmp(list_head->name, "input", 6) == 0 || strncmp(list_head->name, "output", 7) == 0) {
             list_head->type = DIRECTION;

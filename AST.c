@@ -73,7 +73,11 @@ static struct SignalList * find_old_signal(struct ModuleNode *module, char *name
 }
 
 static void skip_number() {
-    if (token_ptr->type == NUMBER) consume();
+    if (token_ptr->type == BRACKET) {
+        consume();
+        consume();
+        consume();
+    }
 }
 
 static void associate(struct ModuleNode * module, char *name, struct SignalList *associate_list) {
@@ -85,6 +89,9 @@ static void associate(struct ModuleNode * module, char *name, struct SignalList 
             break;
         }
         head = head->next;
+        if (head == NULL) {
+            printf("Cannot find symbol %s in module %s\n", name, module->name);
+        }
     }
     struct SignalList *list = (struct SignalList *)malloc(sizeof (struct SignalList));
     list->next = associate_list->next;
@@ -155,6 +162,7 @@ static struct ModuleNode * genASTModule() {
                 // add new_signal to module info
                 new_signal->next = module->sig_list.next;
                 module->sig_list.next = new_signal;
+                consume();
             } else {
                 // invalid format
                 expect(NAME);
@@ -176,6 +184,7 @@ static struct ModuleNode * genASTModule() {
                 }
             } else {
                 expect(SEMICOLON);
+                consume();
             }
         } else if (token_ptr->type == ASSIGN) {
             // assign decleard signals
@@ -183,7 +192,9 @@ static struct ModuleNode * genASTModule() {
             if (token_ptr->type == NAME) {
                 char *sig_name = token_ptr->name;
                 struct SignalList *old_signal = find_old_signal(module, sig_name);
+                consume();
                 expect(ASSOCIATE);
+                consume();
                 while (1) {
                     // all names following are associative with this signal
                     if (token_ptr->type == SEMICOLON) {
@@ -193,6 +204,7 @@ static struct ModuleNode * genASTModule() {
                     if (token_ptr->type == NAME) {
                         associate(module, token_ptr->name, &(old_signal->node->associate_list));
                     }
+                    consume();
                 }
             } else {
                 expect(NAME);
@@ -200,12 +212,19 @@ static struct ModuleNode * genASTModule() {
         } else if (token_ptr->type == ALWAYS) {
             // an always @(clk) block
             expect(ALWAYS);
+            consume();
             expect(AT);
+            consume();
             expect(BRACKET);
+            consume();
             expect(POSEDGE);
+            consume();
             expect(NAME); // the driving clock
+            consume();
             expect(BRACKET);
+            consume();
             expect(BRACKET); // begin
+            consume();
 
             // if-else clauses
             // todo: if-else
@@ -213,6 +232,9 @@ static struct ModuleNode * genASTModule() {
             expect(BRACKET); // end
         } else if (token_ptr->type == NAME) {
             // defining a new module instance
+            // we should associate all input signal of new module instance with our signal
+            // and associate all output signal of new module instance with our signal
+            
         } else {
             printf("Error: cannot understand token %s at line %d\n", token_ptr->name, token_ptr->linenum);
             exit(1);

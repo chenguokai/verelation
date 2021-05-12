@@ -17,7 +17,7 @@
  *     SEMICOLON: ;
  *     NUMBER: a'hb [aa:bb]
  *     ASSOCIATE: =
- *     OPERATOR: + - ~ ! & | ^ : == >= <=
+ *     OPERATOR: + - ~ ! & | ^ ? : == >= <=
  *     DIRECTION: input output
  *     IF: if
  *     ALWAYS: always
@@ -25,6 +25,7 @@
  *     POSEDGE: posedge
  *     NAME: other than above tokens
  *     Note that <= can also be associative, in always context
+ *     Some operator like : is treated as operator seperated by spaces and a part of numbers otherwise, for simplicity
  * */
 
 enum TokenType {TYPE_DECL, NAME, MODULE, ENDMODULE, OPERATOR, BRACKET, COMMA, SEMICOLON, ASSOCIATE, NUMBER, DIRECTION, IF, ASSIGN, ALWAYS, AT, POSEDGE};
