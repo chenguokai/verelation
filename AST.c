@@ -98,18 +98,28 @@ static void associate(struct ModuleNode * module, char *name, struct SignalList 
     list->node = head->node;
     associate_list->next = list;
 }
+static recover_table(struct StringNode * condition_table, int if_condition_count) {
+    // recover from added string_node
+    struct StringNode *del;
+    for (int i = 0; i < if_condition_count; ++i) {
+        del = condition_table->next;
+        condition_table->next = del->next;
+        free(del);
+    }
+}
 
-void deal_if(struct ModuleNode *module, struct StringNode *condition_table) {
-    int if_condition_count;
+static void deal_if(struct ModuleNode *module, struct StringNode *condition_table) {
+    int if_condition_count = 0;
     while (1) {
         // exit when we met an end at the beginning
         if (token_ptr->type == END) {
+            recover_table(condition_table, if_condition_count);
             consume();
-            break;
-        } else if (token_ptr->type == ENDMODULE) {
             break;
         }
         if (token_ptr->type == NAME) {
+            recover_table(condition_table, if_condition_count);
+            if_condition_count = 0;
             // unconditional
             char *sig_name = token_ptr->name;
             struct SignalList *old_signal = find_old_signal(module, sig_name);
@@ -138,7 +148,7 @@ void deal_if(struct ModuleNode *module, struct StringNode *condition_table) {
             expect(BRACKET);
             consume();
             // count used to recover
-            if_condition_count = 0;
+
             while (1) {
                 if (token_ptr->type == BEGIN) break;
 
@@ -167,17 +177,11 @@ void deal_if(struct ModuleNode *module, struct StringNode *condition_table) {
                     expect(END);
                     consume();
                 } else {
-                    deal_if(module, condition_table);
+                    // another IF here
+                    // deal_if(module, condition_table);
+                    continue;
                 }
             }
-            // recover from added string_node
-            struct StringNode *del;
-            for (int i = 0; i < if_condition_count; ++i) {
-                del = condition_table->next;
-                condition_table->next = del->next;
-                free(del);
-            }
-            continue;
         }
     }
 }
