@@ -24,12 +24,6 @@ struct SignalList {
     struct SignalNode *node;
 };
 
-struct SignalNode {
-    enum SIGTYPE type;
-    char name[STRING_LEN];
-    struct SignalList associate_list;
-};
-
 struct ModuleNode {
     /*
      * A Module should have its input and output signal identified
@@ -42,6 +36,15 @@ struct ModuleList {
     struct ModuleList *next;
     struct ModuleNode *module;
 };
+
+struct SignalNode {
+    enum SIGTYPE type;
+    char name[STRING_LEN];
+    struct SignalList associate_list;
+    struct ModuleList associate_list_module;
+};
+
+
 
 void genTotalAST();
 void print_module(struct ModuleNode *module);
