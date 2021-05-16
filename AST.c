@@ -32,12 +32,13 @@ void genTotalAST() {
         new_list->next = module_list.next;
         module_list.next = new_list;
     }
+    /*
     new_list = module_list.next;
     while (new_list != NULL) {
         print_module(new_list->module);
         new_list = new_list->next;
     }
-
+    */
 
 }
 

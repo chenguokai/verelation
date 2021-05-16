@@ -11,6 +11,8 @@
 #define FILE_MAX_SIZE 100000000 // about 100 MB
 
 extern int feature_preprocess;
+extern int feature_search_depth;
+extern int feature_search_ignore_chisel;
 extern char source_path[PATH_LEN];
 extern FILE *source_file;
 extern char* source_buffer;

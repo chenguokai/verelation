@@ -4,7 +4,7 @@
 
 ## Build
 
-You should be able to build using cmake:
+You should be able to build using `cmake`:
 
 ```shell
 mkdir build && cd build
@@ -14,6 +14,10 @@ make
 
 ## How to use
 
+You may get necessary help with:
+```
+verelation --help
+```
 
 ## License
 
