@@ -14,7 +14,10 @@ char source_path[PATH_LEN];
 FILE *source_file;
 char *source_buffer;
 
+#define VERSION "0.1"
+
 static void print_help() {
+    printf("verelation version %s\n", VERSION);
     printf("Usage: verelation [flags] [verilog file]\n");
     printf("flags:\n");
     printf("-np/--no-preprocess: do not preprocess the verilog source file, note that it may cause problems\n");
