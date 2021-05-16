@@ -41,10 +41,11 @@ struct SignalNode {
     enum SIGTYPE type;
     char name[STRING_LEN];
     struct SignalList associate_list;
-    struct ModuleList associate_list_module;
+    // the module that it belongs to
+    struct ModuleNode *module;
 };
 
-
+extern struct ModuleList module_list;
 
 void genTotalAST();
 void print_module(struct ModuleNode *module);

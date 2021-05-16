@@ -5,6 +5,7 @@
 #include "preprocess.h"
 #include "token.h"
 #include "AST.h"
+#include "shell.h"
 
 int feature_preprocess = 0;
 char source_path[PATH_LEN];
@@ -59,6 +60,7 @@ int main(int argc, char **argv) {
 
     genTotalAST();
 
+    user_shell();
 
     return 0;
 }

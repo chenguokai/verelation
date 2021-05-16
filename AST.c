@@ -14,17 +14,30 @@
 struct TokenNode *token_ptr;
 static struct ModuleNode * genASTModule();
 
+struct ModuleList module_list;
+
 void genTotalAST() {
+    module_list.next = NULL;
+    module_list.module = NULL;
     token_ptr = token_head.next;
+    struct ModuleNode *new_module;
+    struct ModuleList *new_list;
     /*
      * We generate the total AST tree here
      * */
-    /*
     while (token_ptr != NULL) {
-        genASTModule();
+        new_list = (struct ModuleList *)(malloc(sizeof (struct ModuleList)));
+        new_list->module = genASTModule();
+        printf("Module %s analysed\n", new_list->module->name);
+        new_list->next = module_list.next;
+        module_list.next = new_list;
     }
-    */
-    print_module(genASTModule());
+    new_list = module_list.next;
+    while (new_list != NULL) {
+        print_module(new_list->module);
+        new_list = new_list->next;
+    }
+
 
 }
 
@@ -79,7 +92,9 @@ static void skip_number() {
         consume();
     }
 }
-
+/*
+ * Associate the name signal in module with the given associate list
+ * */
 static void associate(struct ModuleNode * module, char *name, struct SignalList *associate_list) {
     // associate current signal with a name
     struct SignalList *head = module->sig_list.next;
@@ -174,8 +189,8 @@ static void deal_if(struct ModuleNode *module, struct StringNode *condition_tabl
                 if (token_ptr->type == BEGIN) {
                     consume();
                     deal_if(module, condition_table);
-                    expect(END);
-                    consume();
+                    // expect(END);
+                    // consume();
                 } else {
                     // another IF here
                     // deal_if(module, condition_table);
@@ -186,6 +201,21 @@ static void deal_if(struct ModuleNode *module, struct StringNode *condition_tabl
     }
 }
 
+static struct ModuleNode * get_module(char *name) {
+    struct ModuleList *ret = module_list.next;
+    while (ret != NULL) {
+        if (strncmp(name, ret->module->name, STRING_LEN) == 0) {
+            break;
+        }
+        ret = ret->next;
+    }
+    if (ret != NULL) {
+        return ret->module;
+    } else {
+        return NULL; // not found
+    }
+
+}
 
 static struct ModuleNode * genASTModule() {
     /*
@@ -219,6 +249,7 @@ static struct ModuleNode * genASTModule() {
         consume(); // consume token name
 
         // add new_signal to module info
+        new_signal->node->module = module;
         new_signal->next = module->sig_list.next;
         module->sig_list.next = new_signal;
 
@@ -236,6 +267,7 @@ static struct ModuleNode * genASTModule() {
 
     while (1) {
         if (token_ptr->type == ENDMODULE) {
+            consume();
             break; // if we have reached the end of the module
         }
         if (token_ptr->type == TYPE_DECL) {
@@ -246,6 +278,7 @@ static struct ModuleNode * genASTModule() {
             if (token_ptr->type == NAME) {
                 new_signal = alloc_signal(SIG_INTERNAL);
                 // add new_signal to module info
+                new_signal->node->module = module;
                 new_signal->next = module->sig_list.next;
                 module->sig_list.next = new_signal;
                 consume();
@@ -317,10 +350,71 @@ static struct ModuleNode * genASTModule() {
             condition_table.next = NULL;
             deal_if(module, &condition_table);
         } else if (token_ptr->type == NAME) {
+            int have_module_defined = 1;
             // defining a new module instance
             // we should associate all input signal of new module instance with our signal
             // and associate all output signal of new module instance with our signal
+            struct ModuleNode *new_module = get_module(token_ptr->name);
+            if (new_module == NULL) {
+                printf("Warning: Cannot find module name %s\n", token_ptr->name);
+                // exit(1);
+                have_module_defined = 0;
+            }
+            consume();
+            expect(NAME); // the name of the instance
+            consume();
+            expect(BRACKET);
+            consume();
 
+            int analyse_done = 0;
+            // analyse the clock maps
+            while (1) {
+                expect(DOT);
+                consume();
+                expect(NAME);
+                // this is the name of the new_module
+                struct SignalList *new_module_signal = NULL;
+                if (have_module_defined)
+                    new_module_signal = find_old_signal(new_module, token_ptr->name);
+                consume();
+                expect(BRACKET);
+                consume();
+                expect(NAME); // the name of the signal in the current module
+                struct SignalList *current_module_signal = NULL;
+                if (have_module_defined)
+                    current_module_signal = find_old_signal(module, token_ptr->name);
+                consume();
+                expect(BRACKET);
+                consume();
+                if (token_ptr->type == COMMA) {
+                    consume();
+                } else {
+                    expect(BRACKET);
+                    consume();
+                    expect(SEMICOLON);
+                    consume();
+                    analyse_done = 1;
+                }
+                if (have_module_defined) {
+                    if (new_module_signal->node->type == SIG_INPUT) {
+                        // input signal
+                        // following signal add to this signal's associate list
+                        associate(module, current_module_signal->node->name, &(new_module_signal->node->associate_list));
+
+                    } else if (new_module_signal->node->type == SIG_OUTPUT) {
+                        // output signal
+                        // this signal add to the following signal's associate
+                        associate(new_module, new_module_signal->node->name, &(current_module_signal->node->associate_list));
+                    } else {
+                        printf("Error: Signal %s is an internal signal\n", token_ptr->name);
+                    }
+                }
+
+                if (analyse_done) {
+                    break;
+                }
+
+            }
         } else {
             printf("Error: cannot understand token %s at line %d\n", token_ptr->name, token_ptr->linenum);
             exit(1);
@@ -335,10 +429,10 @@ void print_module(struct ModuleNode *module) {
     printf("Module %s:\n", module->name);
     struct SignalList *list = module->sig_list.next;
     while (list != NULL) {
-        printf("signal %s type %d\n", list->node->name, list->node->type);
+        printf("signal %s type %d in module %s\n", list->node->name, list->node->type, list->node->module->name);
         struct SignalList *associate = list->node->associate_list.next;
         while (associate != NULL) {
-            printf("  depends on %s\n", associate->node->name);
+            printf("  depends on %s in module %s\n", associate->node->name, associate->node->module->name);
             associate = associate->next;
         }
         list = list->next;
