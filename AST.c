@@ -114,7 +114,7 @@ static void associate(struct ModuleNode * module, char *name, struct SignalList 
     list->node = head->node;
     associate_list->next = list;
 }
-static recover_table(struct StringNode * condition_table, int if_condition_count) {
+static void recover_table(struct StringNode * condition_table, int if_condition_count) {
     // recover from added string_node
     struct StringNode *del;
     for (int i = 0; i < if_condition_count; ++i) {

@@ -14,10 +14,22 @@ static struct ModuleNode *module_node;
 static struct SignalList *signal_list_ptr;
 static struct SignalNode *signal_node;
 
-static void search_module_signal(char *module, char *signal, int depth) {
+#define MAXSEARCHDEPTH 100
+
+struct SignalInfo {
+    char *module;
+    char *signal;
+} search_stack[MAXSEARCHDEPTH];
+
+static void search_module_signal(char *module, char *signal, int depth, int display_depth) {
     // if we have reached the search limit
     if (depth > feature_search_depth) {
         return ;
+    }
+    for (int i = 1; i < depth; i++) {
+        if (strcmp(search_stack[i].module, module) == 0 && strcmp(search_stack[i].signal, signal) == 0) {
+            return ; // in a loop
+        }
     }
     struct ModuleList *module_list_ptr;
     struct ModuleNode *module_node;
@@ -44,13 +56,17 @@ static void search_module_signal(char *module, char *signal, int depth) {
             struct SignalList *list = signal_node->associate_list.next;
             while (list != NULL) {
                 if (list->node->name[0] == '_' && feature_search_ignore_chisel) {
-                    search_module_signal(list->node->module->name, list->node->name, depth);
+                    search_stack[depth].module = module;
+                    search_stack[depth].signal = signal;
+                    search_module_signal(list->node->module->name, list->node->name, depth + 1, display_depth);
                 } else {
-                    for (int i = 0; i < depth; i++) {
+                    for (int i = 0; i < display_depth; i++) {
                         printf("  "); // indent
                     }
                     printf("depend on %s in module %s\n", list->node->name, list->node->module->name);
-                    search_module_signal(list->node->module->name, list->node->name, depth + 1);
+                    search_stack[depth].module = module;
+                    search_stack[depth].signal = signal;
+                    search_module_signal(list->node->module->name, list->node->name, depth + 1, display_depth + 1);
                 }
                 list = list->next;
             }
@@ -72,7 +88,7 @@ void user_shell() {
         } else if (strncmp(user_input, "lookup", 7) == 0) {
             // lookup the signal name in module
             scanf("%s%s", module_name, signal_name);
-            search_module_signal(module_name, signal_name, 1);
+            search_module_signal(module_name, signal_name, 1, 1);
         }
     }
 }
