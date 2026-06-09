@@ -14,9 +14,16 @@
 struct TokenNode *token_ptr;
 static struct ModuleNode * genASTModule();
 static struct ModuleNode * get_module(char *name);
+static struct SignalList * find_old_signal(struct ModuleNode *module, char *name);
+
+struct PendingPortRef {
+    char name[STRING_LEN];
+    struct PendingPortRef *next;
+};
 
 struct PendingModuleRef {
     char name[STRING_LEN];
+    struct PendingPortRef port_refs;
     struct PendingModuleRef *next;
 };
 
@@ -27,14 +34,45 @@ static void reset_pending_module_refs() {
     struct PendingModuleRef *ptr = pending_module_refs.next;
     while (ptr != NULL) {
         struct PendingModuleRef *next = ptr->next;
+        struct PendingPortRef *port_ptr = ptr->port_refs.next;
+        while (port_ptr != NULL) {
+            struct PendingPortRef *port_next = port_ptr->next;
+            free(port_ptr);
+            port_ptr = port_next;
+        }
         free(ptr);
         ptr = next;
     }
     pending_module_refs.next = NULL;
 }
 
-static int pending_module_ref_exists(char *name) {
+static struct PendingModuleRef *find_pending_module_ref(char *name) {
     struct PendingModuleRef *ptr = pending_module_refs.next;
+    while (ptr != NULL) {
+        if (strncmp(ptr->name, name, STRING_LEN) == 0) {
+            return ptr;
+        }
+        ptr = ptr->next;
+    }
+    return NULL;
+}
+
+static struct PendingModuleRef *record_pending_module_ref(char *name) {
+    struct PendingModuleRef *old_ref = find_pending_module_ref(name);
+    if (old_ref != NULL) {
+        return old_ref;
+    }
+    struct PendingModuleRef *new_ref = (struct PendingModuleRef *)malloc(sizeof (struct PendingModuleRef));
+    strncpy(new_ref->name, name, STRING_LEN);
+    new_ref->name[STRING_LEN - 1] = 0;
+    new_ref->port_refs.next = NULL;
+    new_ref->next = pending_module_refs.next;
+    pending_module_refs.next = new_ref;
+    return new_ref;
+}
+
+static int pending_port_ref_exists(struct PendingModuleRef *module_ref, char *name) {
+    struct PendingPortRef *ptr = module_ref->port_refs.next;
     while (ptr != NULL) {
         if (strncmp(ptr->name, name, STRING_LEN) == 0) {
             return 1;
@@ -44,22 +82,29 @@ static int pending_module_ref_exists(char *name) {
     return 0;
 }
 
-static void record_pending_module_ref(char *name) {
-    if (pending_module_ref_exists(name)) {
+static void record_pending_port_ref(struct PendingModuleRef *module_ref, char *name) {
+    if (pending_port_ref_exists(module_ref, name)) {
         return;
     }
-    struct PendingModuleRef *new_ref = (struct PendingModuleRef *)malloc(sizeof (struct PendingModuleRef));
+    struct PendingPortRef *new_ref = (struct PendingPortRef *)malloc(sizeof (struct PendingPortRef));
     strncpy(new_ref->name, name, STRING_LEN);
     new_ref->name[STRING_LEN - 1] = 0;
-    new_ref->next = pending_module_refs.next;
-    pending_module_refs.next = new_ref;
+    new_ref->next = module_ref->port_refs.next;
+    module_ref->port_refs.next = new_ref;
 }
 
 static void report_missing_module_refs() {
     struct PendingModuleRef *ptr = pending_module_refs.next;
     while (ptr != NULL) {
-        if (get_module(ptr->name) == NULL) {
+        struct ModuleNode *module = get_module(ptr->name);
+        if (module == NULL) {
             printf("Warning: Cannot find module name %s\n", ptr->name);
+        } else {
+            struct PendingPortRef *port_ptr = ptr->port_refs.next;
+            while (port_ptr != NULL) {
+                find_old_signal(module, port_ptr->name);
+                port_ptr = port_ptr->next;
+            }
         }
         ptr = ptr->next;
     }
@@ -485,8 +530,9 @@ static struct ModuleNode * genASTModule() {
             // we should associate all input signal of new module instance with our signal
             // and associate all output signal of new module instance with our signal
             struct ModuleNode *new_module = get_module(token_ptr->name);
+            struct PendingModuleRef *pending_module_ref = NULL;
             if (new_module == NULL) {
-                record_pending_module_ref(token_ptr->name);
+                pending_module_ref = record_pending_module_ref(token_ptr->name);
                 have_module_defined = 0;
             }
             consume();
@@ -524,8 +570,11 @@ static struct ModuleNode * genASTModule() {
                 expect(NAME);
                 // this is the name of the signal in the new module
                 struct SignalList *new_module_signal = NULL;
-                if (have_module_defined)
+                if (have_module_defined) {
                     new_module_signal = find_old_signal(new_module, token_ptr->name);
+                } else {
+                    record_pending_port_ref(pending_module_ref, token_ptr->name);
+                }
                 consume();
                 expect(BRACKET);
                 consume();
