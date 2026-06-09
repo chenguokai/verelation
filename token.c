@@ -3,6 +3,7 @@
 //
 
 #include "token.h"
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include "common.h"
@@ -27,7 +28,14 @@ static int get_next_token() {
     // if we need to increase line number
     int line_inc = 0;
     while (1) {
-        switch (source_buffer[source_buffer_offset]) {
+        char current_char = source_buffer[source_buffer_offset];
+        if (isspace((unsigned char)current_char)) {
+            if (current_char == '\n') {
+                line_inc = 1;
+            }
+            token_got = 1;
+        } else {
+            switch (current_char) {
             case ';':
             case '{':
             case '}':
@@ -59,18 +67,12 @@ static int get_next_token() {
                 // will always generate a token
 
                 break;
-            case '\n':
-                line_inc = 1;
-                token_got = 1;
-                break;
-            case ' ':
-                token_got = 1;
-                break;
             case 0:
                 ret = 0;
                 // fall through
                 token_got = 1;
                 break;
+            }
         }
         if (token_got) {
             if (token_len == 0) {

@@ -44,7 +44,7 @@ void genTotalAST() {
 
 static void expect(enum TokenType expected) {
     if (token_ptr->type != expected) {
-        printf("Error: type mismatch on token %s at line %d\n", token_ptr->name, token_ptr->linenum);
+        printf("Error: type mismatch on token \"%s\" at line %d\n", token_ptr->name, token_ptr->linenum);
         exit(1);
     }
 }
