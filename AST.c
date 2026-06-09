@@ -13,12 +13,62 @@
 
 struct TokenNode *token_ptr;
 static struct ModuleNode * genASTModule();
+static struct ModuleNode * get_module(char *name);
+
+struct PendingModuleRef {
+    char name[STRING_LEN];
+    struct PendingModuleRef *next;
+};
 
 struct ModuleList module_list;
+static struct PendingModuleRef pending_module_refs;
+
+static void reset_pending_module_refs() {
+    struct PendingModuleRef *ptr = pending_module_refs.next;
+    while (ptr != NULL) {
+        struct PendingModuleRef *next = ptr->next;
+        free(ptr);
+        ptr = next;
+    }
+    pending_module_refs.next = NULL;
+}
+
+static int pending_module_ref_exists(char *name) {
+    struct PendingModuleRef *ptr = pending_module_refs.next;
+    while (ptr != NULL) {
+        if (strncmp(ptr->name, name, STRING_LEN) == 0) {
+            return 1;
+        }
+        ptr = ptr->next;
+    }
+    return 0;
+}
+
+static void record_pending_module_ref(char *name) {
+    if (pending_module_ref_exists(name)) {
+        return;
+    }
+    struct PendingModuleRef *new_ref = (struct PendingModuleRef *)malloc(sizeof (struct PendingModuleRef));
+    strncpy(new_ref->name, name, STRING_LEN);
+    new_ref->name[STRING_LEN - 1] = 0;
+    new_ref->next = pending_module_refs.next;
+    pending_module_refs.next = new_ref;
+}
+
+static void report_missing_module_refs() {
+    struct PendingModuleRef *ptr = pending_module_refs.next;
+    while (ptr != NULL) {
+        if (get_module(ptr->name) == NULL) {
+            printf("Warning: Cannot find module name %s\n", ptr->name);
+        }
+        ptr = ptr->next;
+    }
+}
 
 void genTotalAST() {
     module_list.next = NULL;
     module_list.module = NULL;
+    reset_pending_module_refs();
     token_ptr = token_head.next;
     struct ModuleNode *new_module;
     struct ModuleList *new_list;
@@ -32,6 +82,7 @@ void genTotalAST() {
         new_list->next = module_list.next;
         module_list.next = new_list;
     }
+    report_missing_module_refs();
     /*
     new_list = module_list.next;
     while (new_list != NULL) {
@@ -435,8 +486,7 @@ static struct ModuleNode * genASTModule() {
             // and associate all output signal of new module instance with our signal
             struct ModuleNode *new_module = get_module(token_ptr->name);
             if (new_module == NULL) {
-                printf("Warning: Cannot find module name %s\n", token_ptr->name);
-                // exit(1);
+                record_pending_module_ref(token_ptr->name);
                 have_module_defined = 0;
             }
             consume();
