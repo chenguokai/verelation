@@ -29,8 +29,9 @@ void preprocess(char **source_buffer) {
             // identify the type of marco
             switch (c) {
                 case 'd':
+                case 't':
                     while (fgetc(source_file) != '\n');
-                    break; // define, skip until we got to the end of the line
+                    break; // define/timescale, skip until we got to the end of the line
                 case 'i':
                     ++ifdef_count;
                     break; // ifdef begin, we do not need to deal with the reset, for ifdef_count must be above 1
@@ -42,8 +43,19 @@ void preprocess(char **source_buffer) {
             }
         } else if (c == '/') {
             // comments
-            while (fgetc(source_file) != '\n');
-            ret[ret_offset++] = '\n';
+            int next = fgetc(source_file);
+            if (next == '/') {
+                while ((c = fgetc(source_file)) != EOF && c != '\n');
+                ret[ret_offset++] = '\n';
+            } else if (next == '*') {
+                int prev = 0;
+                while ((c = fgetc(source_file)) != EOF) {
+                    if (prev == '*' && c == '/') {
+                        break;
+                    }
+                    prev = c;
+                }
+            }
         } else if (ifdef_count == 0) {
             ret[ret_offset++] = c;
         }

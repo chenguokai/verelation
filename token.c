@@ -50,6 +50,7 @@ static int get_next_token() {
             case '~':
             case '!':
             case '@':
+            case '#':
             case '[':
             case ']':
             case '.':
@@ -134,7 +135,7 @@ void process_token_type() {
         } else if (strncmp(list_head->name, "=", 2) == 0) {
             list_head->type = ASSOCIATE;
         } else if (list_head->name[0] == '+' || list_head->name[0] == '-' || list_head->name[0] == '*' || strncmp(list_head->name, "<", 2) == 0 || list_head->name[0] == '%' ||
-                strncmp(list_head->name, ">", 2) == 0 || list_head->name[0] == '~' || list_head->name[0] == '!' || list_head->name[0] == '&' || list_head->name[0] == '|' || list_head->name[0] == '^' || list_head->name[0] == ':' || strncmp(list_head->name, "==", 3) == 0 || strncmp(list_head->name, ">=", 3) == 0 || strncmp(list_head->name, "<=", 3) == 0 || strncmp(list_head->name, "<<", 3) == 0 || strncmp(list_head->name, ">>", 3) == 0 || strncmp(list_head->name, "$signed", 8) == 0 || strncmp(list_head->name, ">>>", 4) == 0 || strncmp(list_head->name, "<<<", 4) == 0 || list_head->name[0] == '?' || list_head->name[0] == ':') {
+                strncmp(list_head->name, ">", 2) == 0 || list_head->name[0] == '~' || list_head->name[0] == '!' || list_head->name[0] == '&' || list_head->name[0] == '|' || list_head->name[0] == '^' || list_head->name[0] == ':' || strncmp(list_head->name, "==", 3) == 0 || strncmp(list_head->name, ">=", 3) == 0 || strncmp(list_head->name, "<=", 3) == 0 || strncmp(list_head->name, "<<", 3) == 0 || strncmp(list_head->name, ">>", 3) == 0 || list_head->name[0] == '#' || strncmp(list_head->name, "$signed", 8) == 0 || strncmp(list_head->name, ">>>", 4) == 0 || strncmp(list_head->name, "<<<", 4) == 0 || list_head->name[0] == '?' || list_head->name[0] == ':') {
             list_head->type = OPERATOR;
         } else if (strncmp(list_head->name, "input", 6) == 0 || strncmp(list_head->name, "output", 7) == 0) {
             list_head->type = DIRECTION;

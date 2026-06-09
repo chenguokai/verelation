@@ -87,9 +87,11 @@ static struct SignalList * find_old_signal(struct ModuleNode *module, char *name
 }
 
 static void skip_number() {
-    if (token_ptr->type == BRACKET) {
+    while (token_ptr->type == BRACKET && token_ptr->name[0] == '[') {
         consume();
-        consume();
+        while (!(token_ptr->type == BRACKET && token_ptr->name[0] == ']')) {
+            consume();
+        }
         consume();
     }
 }
@@ -107,6 +109,7 @@ static void associate(struct ModuleNode * module, char *name, struct SignalList 
         head = head->next;
         if (head == NULL) {
             printf("Cannot find symbol %s in module %s\n", name, module->name);
+            return;
         }
     }
     struct SignalList *list = (struct SignalList *)malloc(sizeof (struct SignalList));
@@ -124,81 +127,122 @@ static void recover_table(struct StringNode * condition_table, int if_condition_
     }
 }
 
-static void deal_if(struct ModuleNode *module, struct StringNode *condition_table) {
-    int if_condition_count = 0;
+static void deal_if(struct ModuleNode *module, struct StringNode *condition_table);
+
+static void add_condition_associations(struct ModuleNode *module, struct SignalList *old_signal, struct StringNode *condition_table) {
+    struct StringNode *ptr = condition_table->next;
+    while (ptr != NULL) {
+        associate(module, ptr->name, &(old_signal->node->associate_list));
+        ptr = ptr->next;
+    }
+}
+
+static void deal_assignment(struct ModuleNode *module, struct StringNode *condition_table) {
+    char *sig_name = token_ptr->name;
+    struct SignalList *old_signal = find_old_signal(module, sig_name);
+    consume();
     while (1) {
-        // exit when we met an end at the beginning
-        if (token_ptr->type == END) {
-            recover_table(condition_table, if_condition_count);
+        if (token_ptr->type == SEMICOLON) {
             consume();
             break;
         }
         if (token_ptr->type == NAME) {
-            recover_table(condition_table, if_condition_count);
-            if_condition_count = 0;
-            // unconditional
-            char *sig_name = token_ptr->name;
-            struct SignalList *old_signal = find_old_signal(module, sig_name);
-            consume();
-            while (1) {
-                if (token_ptr->type == SEMICOLON) {
-                    consume();
+            associate(module, token_ptr->name, &(old_signal->node->associate_list));
+        }
+        consume();
+    }
+    add_condition_associations(module, old_signal, condition_table);
+}
+
+static void deal_statement(struct ModuleNode *module, struct StringNode *condition_table);
+
+static void deal_conditional(struct ModuleNode *module, struct StringNode *condition_table) {
+    int if_condition_count = 0;
+    consume();
+    expect(BRACKET);
+    consume();
+
+    int bracket_depth = 1;
+    while (bracket_depth > 0) {
+        if (token_ptr->type == BRACKET) {
+            if (token_ptr->name[0] == '(') {
+                ++bracket_depth;
+            } else if (token_ptr->name[0] == ')') {
+                --bracket_depth;
+                if (bracket_depth == 0) {
                     break;
-                }
-                if (token_ptr->type == NAME) {
-                    // associate this signal
-                    associate(module, token_ptr->name, &(old_signal->node->associate_list));
-                }
-                consume();
-            }
-            // add signals from condition_table
-            struct StringNode *ptr = condition_table->next;
-            while (ptr != NULL) {
-                associate(module, ptr->name, &(old_signal->node->associate_list));
-                ptr = ptr->next;
-            }
-            continue;
-
-        } else if (token_ptr->type == IF) {
-            consume();
-            expect(BRACKET);
-            consume();
-            // count used to recover
-
-            while (1) {
-                if (token_ptr->type == BEGIN) break;
-
-                if (token_ptr->type == NAME) {
-                    // allocate a new string node
-                    struct StringNode *string_node = (struct StringNode *) malloc(sizeof (struct StringNode));
-                    string_node->name = token_ptr->name;
-                    string_node->next = condition_table->next;
-                    condition_table->next = string_node;
-                    ++if_condition_count;
-                }
-                consume();
-            }
-            // if ... BEGIN
-            expect(BEGIN);
-            consume();
-            deal_if(module, condition_table);
-            if (token_ptr->type == ELSE) {
-                // we have an else to deal with
-                consume();
-                // if it begins with if, no begin needed
-                // if it begins with begin, consume it
-                if (token_ptr->type == BEGIN) {
-                    consume();
-                    deal_if(module, condition_table);
-                    // expect(END);
-                    // consume();
-                } else {
-                    // another IF here
-                    // deal_if(module, condition_table);
-                    continue;
                 }
             }
         }
+        if (token_ptr->type == NAME) {
+            struct StringNode *string_node = (struct StringNode *) malloc(sizeof (struct StringNode));
+            string_node->name = token_ptr->name;
+            string_node->next = condition_table->next;
+            condition_table->next = string_node;
+            ++if_condition_count;
+        }
+        consume();
+    }
+    expect(BRACKET);
+    consume();
+
+    if (token_ptr->type == BEGIN) {
+        consume();
+        deal_if(module, condition_table);
+    } else {
+        deal_statement(module, condition_table);
+    }
+
+    if (token_ptr->type == ELSE) {
+        consume();
+        if (token_ptr->type == BEGIN) {
+            consume();
+            deal_if(module, condition_table);
+        } else {
+            deal_statement(module, condition_table);
+        }
+    }
+
+    recover_table(condition_table, if_condition_count);
+}
+
+static void deal_statement(struct ModuleNode *module, struct StringNode *condition_table) {
+    while (token_ptr->type == NAME && strlen(token_ptr->name) > 0 && token_ptr->name[strlen(token_ptr->name) - 1] == ':') {
+        consume();
+    }
+    if (token_ptr->type == END || token_ptr->type == ELSE || token_ptr->type == ENDMODULE) {
+        return;
+    }
+    if (token_ptr->type == NAME && (strncmp(token_ptr->name, "assert", 7) == 0 || strncmp(token_ptr->name, "assume", 7) == 0 || strncmp(token_ptr->name, "cover", 6) == 0)) {
+        while (token_ptr->type != SEMICOLON) {
+            consume();
+        }
+        consume();
+        return;
+    }
+    if (token_ptr->type == IF) {
+        deal_conditional(module, condition_table);
+    } else if (token_ptr->type == NAME) {
+        deal_assignment(module, condition_table);
+    } else if (token_ptr->type == BEGIN) {
+        consume();
+        deal_if(module, condition_table);
+    } else {
+        printf("Error: cannot understand token %s at line %d\n", token_ptr->name, token_ptr->linenum);
+        exit(1);
+    }
+}
+
+static void deal_if(struct ModuleNode *module, struct StringNode *condition_table) {
+    while (1) {
+        if (token_ptr->type == END) {
+            consume();
+            break;
+        }
+        if (token_ptr->type == ENDMODULE) {
+            break;
+        }
+        deal_statement(module, condition_table);
     }
 }
 
@@ -230,6 +274,27 @@ static struct ModuleNode * genASTModule() {
     expect(NAME);
     strncpy(module->name, token_ptr->name, STRING_LEN);
     consume();
+    if (strncmp(token_ptr->name, "#", 2) == 0) {
+        consume();
+        expect(BRACKET);
+        consume();
+        int parameter_depth = 1;
+        while (parameter_depth > 0) {
+            if (token_ptr->type == BRACKET) {
+                if (token_ptr->name[0] == '(') {
+                    ++parameter_depth;
+                } else if (token_ptr->name[0] == ')') {
+                    --parameter_depth;
+                    if (parameter_depth == 0) {
+                        break;
+                    }
+                }
+            }
+            consume();
+        }
+        expect(BRACKET);
+        consume();
+    }
     expect(BRACKET);
     consume();
     while (1) {
@@ -330,26 +395,39 @@ static struct ModuleNode * genASTModule() {
                 expect(NAME);
             }
         } else if (token_ptr->type == ALWAYS) {
-            // an always @(clk) block
+            // an always block
             expect(ALWAYS);
             consume();
             expect(AT);
             consume();
             expect(BRACKET);
             consume();
-            expect(POSEDGE);
-            consume();
-            expect(NAME); // the driving clock
-            consume();
+            int sensitivity_depth = 1;
+            while (sensitivity_depth > 0) {
+                if (token_ptr->type == BRACKET) {
+                    if (token_ptr->name[0] == '(') {
+                        ++sensitivity_depth;
+                    } else if (token_ptr->name[0] == ')') {
+                        --sensitivity_depth;
+                        if (sensitivity_depth == 0) {
+                            break;
+                        }
+                    }
+                }
+                consume();
+            }
             expect(BRACKET);
-            consume();
-            expect(BEGIN); // begin
             consume();
 
             // the head of condition table
             struct StringNode condition_table;
             condition_table.next = NULL;
-            deal_if(module, &condition_table);
+            if (token_ptr->type == BEGIN) {
+                consume();
+                deal_if(module, &condition_table);
+            } else {
+                deal_statement(module, &condition_table);
+            }
         } else if (token_ptr->type == NAME) {
             int have_module_defined = 1;
             // defining a new module instance
@@ -362,6 +440,27 @@ static struct ModuleNode * genASTModule() {
                 have_module_defined = 0;
             }
             consume();
+            if (strncmp(token_ptr->name, "#", 2) == 0) {
+                consume();
+                expect(BRACKET);
+                consume();
+                int parameter_depth = 1;
+                while (parameter_depth > 0) {
+                    if (token_ptr->type == BRACKET) {
+                        if (token_ptr->name[0] == '(') {
+                            ++parameter_depth;
+                        } else if (token_ptr->name[0] == ')') {
+                            --parameter_depth;
+                            if (parameter_depth == 0) {
+                                break;
+                            }
+                        }
+                    }
+                    consume();
+                }
+                expect(BRACKET);
+                consume();
+            }
             expect(NAME); // the name of the instance
             consume();
             expect(BRACKET);
@@ -373,18 +472,37 @@ static struct ModuleNode * genASTModule() {
                 expect(DOT);
                 consume();
                 expect(NAME);
-                // this is the name of the new_module
+                // this is the name of the signal in the new module
                 struct SignalList *new_module_signal = NULL;
                 if (have_module_defined)
                     new_module_signal = find_old_signal(new_module, token_ptr->name);
                 consume();
                 expect(BRACKET);
                 consume();
-                expect(NAME); // the name of the signal in the current module
+
                 struct SignalList *current_module_signal = NULL;
-                if (have_module_defined)
-                    current_module_signal = find_old_signal(module, token_ptr->name);
-                consume();
+                int connection_depth = 1;
+                while (connection_depth > 0) {
+                    if (token_ptr->type == BRACKET) {
+                        if (token_ptr->name[0] == '(') {
+                            ++connection_depth;
+                        } else if (token_ptr->name[0] == ')') {
+                            --connection_depth;
+                            if (connection_depth == 0) {
+                                break;
+                            }
+                        }
+                    }
+                    if (have_module_defined && token_ptr->type == NAME) {
+                        struct SignalList *connected_signal = find_old_signal(module, token_ptr->name);
+                        if (new_module_signal->node->type == SIG_INPUT) {
+                            associate(module, connected_signal->node->name, &(new_module_signal->node->associate_list));
+                        } else if (new_module_signal->node->type == SIG_OUTPUT && current_module_signal == NULL) {
+                            current_module_signal = connected_signal;
+                        }
+                    }
+                    consume();
+                }
                 expect(BRACKET);
                 consume();
                 if (token_ptr->type == COMMA) {
@@ -397,17 +515,10 @@ static struct ModuleNode * genASTModule() {
                     analyse_done = 1;
                 }
                 if (have_module_defined) {
-                    if (new_module_signal->node->type == SIG_INPUT) {
-                        // input signal
-                        // following signal add to this signal's associate list
-                        associate(module, current_module_signal->node->name, &(new_module_signal->node->associate_list));
-
-                    } else if (new_module_signal->node->type == SIG_OUTPUT) {
-                        // output signal
-                        // this signal add to the following signal's associate
+                    if (new_module_signal->node->type == SIG_OUTPUT && current_module_signal != NULL) {
                         associate(new_module, new_module_signal->node->name, &(current_module_signal->node->associate_list));
-                    } else {
-                        printf("Error: Signal %s is an internal signal\n", token_ptr->name);
+                    } else if (new_module_signal->node->type != SIG_INPUT && new_module_signal->node->type != SIG_OUTPUT) {
+                        printf("Error: Signal %s is an internal signal\n", new_module_signal->node->name);
                     }
                 }
 
