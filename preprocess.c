@@ -5,6 +5,8 @@
 #include "preprocess.h"
 #include <stdio.h>
 #include <malloc.h>
+#include <ctype.h>
+#include <string.h>
 #include "common.h"
 
 /*
@@ -14,53 +16,207 @@
  * We BELIEVE that one should NOT use /(division) in verilog, so we will delete /.
  * */
 
+#define MAX_CONDITIONAL_MACROS 4096
+#define MAX_CONDITIONAL_DEPTH 256
+#define LINE_BUF_SIZE 65536
+
+struct ConditionalMacroInfo {
+    char directive[8];
+    char name[128];
+    int filtered;
+};
+
+struct ConditionalState {
+    int parent_skipping;
+    int filtered;
+};
+
+static const char *filtered_macros[] = {
+    "SYNTHESIS",
+    "RANDOMIZE",
+    "RANDOMIZE_REG_INIT",
+    "RANDOMIZE_MEM_INIT",
+    "ENABLE_INITIAL_REG_",
+    "ENABLE_INITIAL_MEM_",
+    "INIT_RANDOM_PROLOG_",
+    "FIRRTL_BEFORE_INITIAL",
+    "FIRRTL_AFTER_INITIAL",
+    "STOP_COND",
+    "STOP_COND_",
+    "ASSERT_VERBOSE_COND",
+    "ASSERT_VERBOSE_COND_",
+    "VERILATOR",
+    NULL
+};
+
+static struct ConditionalMacroInfo conditional_macros[MAX_CONDITIONAL_MACROS];
+static int conditional_macro_count = 0;
+
+static int should_filter_macro(const char *macro) {
+    for (int i = 0; filtered_macros[i] != NULL; ++i) {
+        if (strcmp(macro, filtered_macros[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void record_conditional_macro(const char *directive, const char *macro, int filtered) {
+    if (macro[0] == 0) {
+        return;
+    }
+
+    for (int i = 0; i < conditional_macro_count; ++i) {
+        if (strcmp(conditional_macros[i].directive, directive) == 0 &&
+                strcmp(conditional_macros[i].name, macro) == 0) {
+            conditional_macros[i].filtered |= filtered;
+            return;
+        }
+    }
+
+    if (conditional_macro_count >= MAX_CONDITIONAL_MACROS) {
+        return;
+    }
+
+    strncpy(conditional_macros[conditional_macro_count].directive, directive,
+            sizeof(conditional_macros[conditional_macro_count].directive) - 1);
+    conditional_macros[conditional_macro_count].directive[sizeof(conditional_macros[conditional_macro_count].directive) - 1] = 0;
+    strncpy(conditional_macros[conditional_macro_count].name, macro,
+            sizeof(conditional_macros[conditional_macro_count].name) - 1);
+    conditional_macros[conditional_macro_count].name[sizeof(conditional_macros[conditional_macro_count].name) - 1] = 0;
+    conditional_macros[conditional_macro_count].filtered = filtered;
+    ++conditional_macro_count;
+}
+
+static void print_conditional_macros(void) {
+    if (conditional_macro_count == 0) {
+        return;
+    }
+
+    printf("Preprocess conditional macros:\n");
+    for (int i = 0; i < conditional_macro_count; ++i) {
+        printf("  `%s %s%s\n",
+               conditional_macros[i].directive,
+               conditional_macros[i].name,
+               conditional_macros[i].filtered ? " [filtered]" : "");
+    }
+}
+
+static char *skip_spaces(char *line) {
+    while (*line != 0 && isspace((unsigned char)*line)) {
+        ++line;
+    }
+    return line;
+}
+
+static void read_directive_word(char **cursor, char *buf, int buf_len) {
+    int offset = 0;
+    char *ptr = skip_spaces(*cursor);
+
+    while (*ptr != 0 && !isspace((unsigned char)*ptr)) {
+        if (offset < buf_len - 1) {
+            buf[offset++] = *ptr;
+        }
+        ++ptr;
+    }
+    buf[offset] = 0;
+    *cursor = ptr;
+}
+
+static int parse_directive(char *line, char *directive, int directive_len, char *macro, int macro_len) {
+    char *ptr = skip_spaces(line);
+    if (*ptr != '`') {
+        return 0;
+    }
+
+    ++ptr;
+    read_directive_word(&ptr, directive, directive_len);
+    macro[0] = 0;
+    if (strcmp(directive, "ifdef") == 0 || strcmp(directive, "ifndef") == 0) {
+        read_directive_word(&ptr, macro, macro_len);
+    }
+    return directive[0] != 0;
+}
+
+static void append_char(char *ret, int *ret_offset, char c) {
+    if (*ret_offset < FILE_MAX_SIZE - 2) {
+        ret[(*ret_offset)++] = c;
+    }
+}
+
+static void append_without_comments(char *ret, int *ret_offset, const char *line, int *in_block_comment) {
+    for (int i = 0; line[i] != 0; ++i) {
+        if (*in_block_comment) {
+            if (line[i] == '*' && line[i + 1] == '/') {
+                *in_block_comment = 0;
+                ++i;
+            }
+            continue;
+        }
+
+        if (line[i] == '/' && line[i + 1] == '/') {
+            append_char(ret, ret_offset, '\n');
+            break;
+        }
+        if (line[i] == '/' && line[i + 1] == '*') {
+            *in_block_comment = 1;
+            ++i;
+            continue;
+        }
+        append_char(ret, ret_offset, line[i]);
+    }
+}
+
 void preprocess(char **source_buffer) {
     char *ret = NULL;
     ret = (char *)(malloc(FILE_MAX_SIZE));
     int ret_offset = 0;
+    int conditional_depth = 0;
+    int skipping = 0;
+    int in_block_comment = 0;
+    struct ConditionalState conditional_stack[MAX_CONDITIONAL_DEPTH];
+    char line[LINE_BUF_SIZE];
 
-    int ifdef_count = 0; // record how many ifdefs have we met
-    // we will ignore all contents between any ifdefs and endifs
-    char c;
-    while ((c = fgetc(source_file)) != EOF) {
-        if (c == '`') {
-            // the begin of a marco
-            c = fgetc(source_file);
-            // identify the type of marco
-            switch (c) {
-                case 'd':
-                case 't':
-                    while (fgetc(source_file) != '\n');
-                    break; // define/timescale, skip until we got to the end of the line
-                case 'i':
-                    ++ifdef_count;
-                    break; // ifdef begin, we do not need to deal with the reset, for ifdef_count must be above 1
-                case 'e':
-                    if (fgetc(source_file) == 'l') break; // skip else
-                    --ifdef_count;
-                    for (int j = 0; j < 4; ++j) {fgetc(source_file);} // skip `endif
-                    break; // ifdef end
-            }
-        } else if (c == '/') {
-            // comments
-            int next = fgetc(source_file);
-            if (next == '/') {
-                while ((c = fgetc(source_file)) != EOF && c != '\n');
-                ret[ret_offset++] = '\n';
-            } else if (next == '*') {
-                int prev = 0;
-                while ((c = fgetc(source_file)) != EOF) {
-                    if (prev == '*' && c == '/') {
-                        break;
-                    }
-                    prev = c;
+    conditional_macro_count = 0;
+
+    while (fgets(line, sizeof(line), source_file) != NULL) {
+        char directive[32];
+        char macro[128];
+        if (parse_directive(line, directive, sizeof(directive), macro, sizeof(macro))) {
+            if (strcmp(directive, "ifdef") == 0 || strcmp(directive, "ifndef") == 0) {
+                int filtered = should_filter_macro(macro);
+                record_conditional_macro(directive, macro, filtered);
+                if (conditional_depth < MAX_CONDITIONAL_DEPTH) {
+                    conditional_stack[conditional_depth].parent_skipping = skipping;
+                    conditional_stack[conditional_depth].filtered = filtered;
+                    ++conditional_depth;
                 }
+                skipping = skipping || filtered;
+                continue;
             }
-        } else if (ifdef_count == 0) {
-            ret[ret_offset++] = c;
+            if (strcmp(directive, "else") == 0) {
+                continue;
+            }
+            if (strcmp(directive, "endif") == 0) {
+                if (conditional_depth > 0) {
+                    --conditional_depth;
+                    skipping = conditional_stack[conditional_depth].parent_skipping;
+                }
+                continue;
+            }
+            if (strcmp(directive, "define") == 0 || strcmp(directive, "timescale") == 0) {
+                continue;
+            }
+        }
+
+        if (!skipping) {
+            append_without_comments(ret, &ret_offset, line, &in_block_comment);
         }
     }
-    ret[ret_offset] = '\n'; // string that ends with 0
+
+    ret[ret_offset] = '\n';
     ret[ret_offset + 1] = 0;
     *source_buffer = ret;
+
+    print_conditional_macros();
 }
