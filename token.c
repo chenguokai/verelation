@@ -130,7 +130,7 @@ void process_token_type() {
             list_head->type = COMMA;
         } else if (list_head->name[0] == ';') {
             list_head->type = SEMICOLON;
-        } else if ((list_head->name[0] >= '0' && list_head->name[0] <= '9') || list_head->name[0] == '[') {
+        } else if ((list_head->name[0] >= '0' && list_head->name[0] <= '9') || list_head->name[0] == '[' || strncmp(list_head->name, "'", 2) == 0) {
             list_head->type = NUMBER;
         } else if (strncmp(list_head->name, "=", 2) == 0) {
             list_head->type = ASSOCIATE;
