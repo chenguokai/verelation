@@ -46,6 +46,11 @@ static const char *filtered_macros[] = {
     "ASSERT_VERBOSE_COND",
     "ASSERT_VERBOSE_COND_",
     "VERILATOR",
+    "RANDOM",
+    "INIT_RANDOM",
+    "RANDOMIZE_DELAY",
+    "RANDOMIZE_GARBAGE_ASSIGN",
+    "RANDOMIZE_INVALID_ASSIGN",
     NULL
 };
 

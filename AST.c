@@ -15,9 +15,17 @@ struct TokenNode *token_ptr;
 static struct ModuleNode * genASTModule();
 static struct ModuleNode * get_module(char *name);
 static struct SignalList * find_old_signal(struct ModuleNode *module, char *name);
+static void associate(struct ModuleNode * module, char *name, struct SignalList *associate_list);
+
+struct PendingSignalRef {
+    char name[STRING_LEN];
+    struct PendingSignalRef *next;
+};
 
 struct PendingPortRef {
     char name[STRING_LEN];
+    struct ModuleNode *parent_module;
+    struct PendingSignalRef signal_refs;
     struct PendingPortRef *next;
 };
 
@@ -30,6 +38,14 @@ struct PendingModuleRef {
 struct ModuleList module_list;
 static struct PendingModuleRef pending_module_refs;
 
+static void free_pending_signal_refs(struct PendingSignalRef *signal_ref) {
+    while (signal_ref != NULL) {
+        struct PendingSignalRef *next = signal_ref->next;
+        free(signal_ref);
+        signal_ref = next;
+    }
+}
+
 static void reset_pending_module_refs() {
     struct PendingModuleRef *ptr = pending_module_refs.next;
     while (ptr != NULL) {
@@ -37,6 +53,7 @@ static void reset_pending_module_refs() {
         struct PendingPortRef *port_ptr = ptr->port_refs.next;
         while (port_ptr != NULL) {
             struct PendingPortRef *port_next = port_ptr->next;
+            free_pending_signal_refs(port_ptr->signal_refs.next);
             free(port_ptr);
             port_ptr = port_next;
         }
@@ -71,26 +88,47 @@ static struct PendingModuleRef *record_pending_module_ref(char *name) {
     return new_ref;
 }
 
-static int pending_port_ref_exists(struct PendingModuleRef *module_ref, char *name) {
-    struct PendingPortRef *ptr = module_ref->port_refs.next;
-    while (ptr != NULL) {
-        if (strncmp(ptr->name, name, STRING_LEN) == 0) {
-            return 1;
-        }
-        ptr = ptr->next;
-    }
-    return 0;
-}
-
-static void record_pending_port_ref(struct PendingModuleRef *module_ref, char *name) {
-    if (pending_port_ref_exists(module_ref, name)) {
-        return;
-    }
+static struct PendingPortRef *record_pending_port_ref(struct PendingModuleRef *module_ref, struct ModuleNode *parent_module, char *name) {
     struct PendingPortRef *new_ref = (struct PendingPortRef *)malloc(sizeof (struct PendingPortRef));
     strncpy(new_ref->name, name, STRING_LEN);
     new_ref->name[STRING_LEN - 1] = 0;
+    new_ref->parent_module = parent_module;
+    new_ref->signal_refs.next = NULL;
     new_ref->next = module_ref->port_refs.next;
     module_ref->port_refs.next = new_ref;
+    return new_ref;
+}
+
+static void record_pending_signal_ref(struct PendingPortRef *port_ref, char *name) {
+    struct PendingSignalRef *new_ref = (struct PendingSignalRef *)malloc(sizeof (struct PendingSignalRef));
+    strncpy(new_ref->name, name, STRING_LEN);
+    new_ref->name[STRING_LEN - 1] = 0;
+    new_ref->next = NULL;
+    struct PendingSignalRef *tail = &(port_ref->signal_refs);
+    while (tail->next != NULL) {
+        tail = tail->next;
+    }
+    tail->next = new_ref;
+}
+
+static void replay_pending_port_ref(struct ModuleNode *target_module, struct PendingPortRef *port_ref) {
+    struct SignalList *target_signal = find_old_signal(target_module, port_ref->name);
+    struct SignalList *current_module_signal = NULL;
+    struct PendingSignalRef *signal_ref = port_ref->signal_refs.next;
+    while (signal_ref != NULL) {
+        struct SignalList *connected_signal = find_old_signal(port_ref->parent_module, signal_ref->name);
+        if (target_signal->node->type == SIG_INPUT) {
+            associate(port_ref->parent_module, connected_signal->node->name, &(target_signal->node->associate_list));
+        } else if (target_signal->node->type == SIG_OUTPUT && current_module_signal == NULL) {
+            current_module_signal = connected_signal;
+        }
+        signal_ref = signal_ref->next;
+    }
+    if (target_signal->node->type == SIG_OUTPUT && current_module_signal != NULL) {
+        associate(target_module, target_signal->node->name, &(current_module_signal->node->associate_list));
+    } else if (target_signal->node->type != SIG_INPUT && target_signal->node->type != SIG_OUTPUT) {
+        printf("Error: Signal %s is an internal signal\n", target_signal->node->name);
+    }
 }
 
 static void report_missing_module_refs() {
@@ -102,7 +140,7 @@ static void report_missing_module_refs() {
         } else {
             struct PendingPortRef *port_ptr = ptr->port_refs.next;
             while (port_ptr != NULL) {
-                find_old_signal(module, port_ptr->name);
+                replay_pending_port_ref(module, port_ptr);
                 port_ptr = port_ptr->next;
             }
         }
@@ -570,10 +608,11 @@ static struct ModuleNode * genASTModule() {
                 expect(NAME);
                 // this is the name of the signal in the new module
                 struct SignalList *new_module_signal = NULL;
+                struct PendingPortRef *pending_port_ref = NULL;
                 if (have_module_defined) {
                     new_module_signal = find_old_signal(new_module, token_ptr->name);
                 } else {
-                    record_pending_port_ref(pending_module_ref, token_ptr->name);
+                    pending_port_ref = record_pending_port_ref(pending_module_ref, module, token_ptr->name);
                 }
                 consume();
                 expect(BRACKET);
@@ -592,12 +631,16 @@ static struct ModuleNode * genASTModule() {
                             }
                         }
                     }
-                    if (have_module_defined && token_ptr->type == NAME) {
-                        struct SignalList *connected_signal = find_old_signal(module, token_ptr->name);
-                        if (new_module_signal->node->type == SIG_INPUT) {
-                            associate(module, connected_signal->node->name, &(new_module_signal->node->associate_list));
-                        } else if (new_module_signal->node->type == SIG_OUTPUT && current_module_signal == NULL) {
-                            current_module_signal = connected_signal;
+                    if (token_ptr->type == NAME) {
+                        if (have_module_defined) {
+                            struct SignalList *connected_signal = find_old_signal(module, token_ptr->name);
+                            if (new_module_signal->node->type == SIG_INPUT) {
+                                associate(module, connected_signal->node->name, &(new_module_signal->node->associate_list));
+                            } else if (new_module_signal->node->type == SIG_OUTPUT && current_module_signal == NULL) {
+                                current_module_signal = connected_signal;
+                            }
+                        } else {
+                            record_pending_signal_ref(pending_port_ref, token_ptr->name);
                         }
                     }
                     consume();
